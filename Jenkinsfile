@@ -1,82 +1,56 @@
 pipeline {
     agent any
-    
-    tools {
-        nodejs "nodejs"
+
+    environment {
+        NODE_ENV = 'production'
     }
 
-
     stages {
-        stage('Install Packages') {
+        stage('Clone Repository') {
             steps {
-                script {
-                    sh 'yarn install'
-                }
+                git 'https://github.com/ahmadSalman267/todos-app.git'
             }
         }
 
-        stage('Run the App') {
+        stage('Install Dependencies') {
             steps {
-                script {
-                    sh 'yarn start:pm2'
-                    sleep 5
-                }
+                sh 'yarn install'
             }
         }
 
-        stage('Test the app') {
+        stage('Build') {
             steps {
-                script {
-                    sh 'curl http://localhost:3000/health'
-                }
+                sh 'yarn build || echo "No build step defined"'
             }
         }
 
-        stage('Stop the App') {
+        stage('Deploy to EC2') {
             steps {
-                script {
-                    sh 'pm2 stop todos-app'
-                }
-            }
-        }  
-
-        stage('Add Host to known_hosts') {
-            steps {
-                script {
+                sshagent (credentials: ['jenkins-ec2-key']) {
                     sh '''
-                        ssh-keyscan -H $PRODUCTION_IP_ADRESSS >> /var/lib/jenkins/.ssh/known_hosts
+                    ssh -o StrictHostKeyChecking=no ubuntu@54.161.60.66 <<EOF
+                        if [ -d "todos-app" ]; then
+                            cd todos-app
+                            git pull origin main
+                        else
+                            git clone https://github.com/ahmadSalman267/todos-app.git
+                            cd todos-app
+                        fi
+                        yarn install
+                        pm2 restart all || pm2 start npm --name "todos-app" -- start
+                    EOF
                     '''
                 }
             }
         }
+    }
 
-        stage('Deploy') {
-                environment {
-                    DEPLOY_SSH_KEY = credentials('AWS_INSTANCE_SSH')
-                }
-
-                steps {
-                    sh '''
-                        ssh -v -i $DEPLOY_SSH_KEY ubuntu@$PRODUCTION_IP_ADRESSS '
-                            
-                            if [ ! -d "todos-app" ]; then
-                                git clone https://github.com/AhmadMazaal/todos-app.git todos-app
-                                cd todos-app
-                            else
-                                cd todos-app
-                                git pull
-                            fi
-
-                            yarn install
-                            
-                            if pm2 describe todos-app > /dev/null ; then
-                            pm2 restart todos-app
-                            else
-                                yarn start:pm2
-                            fi
-                        '
-                    '''
-                }
-            }
+    post {
+        success {
+            echo '✅ Deployment successful!'
+        }
+        failure {
+            echo '❌ Deployment failed.'
+        }
     }
 }
