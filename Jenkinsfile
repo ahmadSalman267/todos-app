@@ -20,26 +20,29 @@ pipeline {
 
         stage('Build') {
             steps {
-                sh 'yarn build || echo "No build step defined"'
+                // Using npx ensures babel runs even if not globally installed
+                sh 'npx babel src --out-dir dist || echo "No build step defined"'
             }
         }
 
         stage('Deploy to EC2') {
             steps {
-                sshagent (credentials: ['jenkins-ec2-key']) {
-                    sh '''
-                    ssh -o StrictHostKeyChecking=no ubuntu@54.161.60.66 <<EOF
-                        if [ -d "todos-app" ]; then
-                            cd todos-app
-                            git pull origin main
-                        else
-                            git clone https://github.com/ahmadSalman267/todos-app.git
-                            cd todos-app
-                        fi
-                        yarn install
-                        pm2 restart all || pm2 start npm --name "todos-app" -- start
-                    EOF
-                    '''
+                script {
+                    sshagent(credentials: ['jenkins-ec2-key']) {
+                        sh '''
+                        ssh -o StrictHostKeyChecking=no ubuntu@54.161.60.66 <<EOF
+                            if [ -d "todos-app" ]; then
+                                cd todos-app
+                                git pull origin main
+                            else
+                                git clone https://github.com/ahmadSalman267/todos-app.git
+                                cd todos-app
+                            fi
+                            yarn install
+                            pm2 restart all || pm2 start npm --name "todos-app" -- start
+                        EOF
+                        '''
+                    }
                 }
             }
         }
